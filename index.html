@@ -126,9 +126,280 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
+        // User stats and matchmaking constants
+        const INITIAL_RATING = 1000;
+        const INITIAL_LEVEL = 1;
+        const MAX_LEVEL = 9999;
+        const BASE_XP_REQUIREMENT = 1000;
+        const XP_INCREASE_RATE = 1.2; // 20% increase per level
+        
+        // Initialize user data in Firestore
+        async function initializeUserData(user) {
+            const userRef = doc(db, 'users', user.uid);
+            const userDoc = await getDoc(userRef);
+            
+            if (!userDoc.exists()) {
+                await setDoc(userRef, {
+                    uid: user.uid,
+                    displayName: user.displayName || 'Player',
+                    rating: INITIAL_RATING,
+                    level: INITIAL_LEVEL,
+                    xp: 0,
+                    wins: 0,
+                    losses: 0,
+                    gamesPlayed: 0,
+                    lastActive: serverTimestamp()
+                });
+            }
+            return userDoc.exists() ? userDoc.data() : await getDoc(userRef).then(doc => doc.data());
+        }
+
+        // Calculate XP required for next level
+        function getXPRequirement(level) {
+            return Math.floor(BASE_XP_REQUIREMENT * Math.pow(XP_INCREASE_RATE, level - 1));
+        }
+
+        // Update user's XP and level
+        async function updateUserXP(userId, xpGained) {
+            const userRef = doc(db, 'users', userId);
+            const userDoc = await getDoc(userRef);
+            const userData = userDoc.data();
+            
+            let newXP = userData.xp + xpGained;
+            let newLevel = userData.level;
+            
+            // Check for level up
+            while (newXP >= getXPRequirement(newLevel) && newLevel < MAX_LEVEL) {
+                newXP -= getXPRequirement(newLevel);
+                newLevel++;
+            }
+            
+            await updateDoc(userRef, {
+                xp: newXP,
+                level: newLevel,
+                lastActive: serverTimestamp()
+            });
+            
+            return { newXP, newLevel };
+        }
+
+        // Matchmaking function
+        async function findMatch(userId, userRating) {
+            const usersRef = collection(db, 'matchmaking');
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userData = userDoc.data();
+            
+            // Add user to matchmaking pool
+            await setDoc(doc(usersRef, userId), {
+                userId,
+                rating: userData.rating,
+                timestamp: serverTimestamp(),
+                level: userData.level
+            });
+            
+            // Look for opponents within rating range
+            const RATING_RANGE = 200; // Adjust this value to change matchmaking strictness
+            const matchQuery = query(
+                usersRef,
+                where('userId', '!=', userId),
+                where('rating', '>=', userData.rating - RATING_RANGE),
+                where('rating', '<=', userData.rating + RATING_RANGE)
+            );
+            
+            // Listen for potential matches
+            return new Promise((resolve, reject) => {
+                const unsubscribe = onSnapshot(matchQuery, async (snapshot) => {
+                    const matches = snapshot.docs
+                        .map(doc => doc.data())
+                        .filter(player => Math.abs(player.rating - userData.rating) <= RATING_RANGE)
+                        .sort((a, b) => Math.abs(a.rating - userData.rating) - Math.abs(b.rating - userData.rating));
+                    
+                    if (matches.length > 0) {
+                        const match = matches[0];
+                        // Create game session
+                        const gameId = crypto.randomUUID();
+                        await setDoc(doc(db, 'games', gameId), {
+                            player1: userId,
+                            player2: match.userId,
+                            player1Rating: userData.rating,
+                            player2Rating: match.rating,
+                            status: 'starting',
+                            timestamp: serverTimestamp()
+                        });
+                        
+                        // Remove both players from matchmaking
+                        await deleteDoc(doc(usersRef, userId));
+                        await deleteDoc(doc(usersRef, match.userId));
+                        
+                        unsubscribe();
+                        resolve({ gameId, opponent: match });
+                    }
+                });
+                
+                // Timeout after 60 seconds
+                setTimeout(() => {
+                    unsubscribe();
+                    deleteDoc(doc(usersRef, userId));
+                    reject('Matchmaking timeout');
+                }, 60000);
+            });
+        }
+
         // Make Firebase services globally available
         window.auth = auth;
         window.db = db;
+        // Rating calculation constants
+        const K_FACTOR = 32; // ELO rating constant
+        
+        // Calculate new ratings after a game
+        function calculateNewRatings(player1Rating, player2Rating, player1Won) {
+            const expectedScore1 = 1 / (1 + Math.pow(10, (player2Rating - player1Rating) / 400));
+            const expectedScore2 = 1 - expectedScore1;
+            
+            const actualScore1 = player1Won ? 1 : 0;
+            const actualScore2 = player1Won ? 0 : 1;
+            
+            const newRating1 = Math.round(player1Rating + K_FACTOR * (actualScore1 - expectedScore1));
+            const newRating2 = Math.round(player2Rating + K_FACTOR * (actualScore2 - expectedScore2));
+            
+            return { newRating1, newRating2 };
+        }
+
+        // Handle matchmaking start
+        // Update user profile display
+        async function updateUserDisplay() {
+            const userId = auth.currentUser.uid;
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userData = userDoc.data();
+            
+            // Update basic info
+            document.getElementById('user-name').textContent = userData.displayName;
+            document.getElementById('user-rating').textContent = `Rating: ${userData.rating}`;
+            document.getElementById('user-level').textContent = userData.level;
+            
+            // Update XP progress
+            const xpRequired = getXPRequirement(userData.level);
+            document.getElementById('user-xp').textContent = userData.xp;
+            document.getElementById('user-xp-required').textContent = xpRequired;
+            
+            // Update progress bar
+            const progressPercentage = (userData.xp / xpRequired) * 100;
+            document.getElementById('xp-progress-bar').style.width = `${progressPercentage}%`;
+        }
+
+        // Format time for matchmaking display
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+
+        window.startMatchmaking = async function() {
+            try {
+                const userId = auth.currentUser.uid;
+                const userDoc = await getDoc(doc(db, 'users', userId));
+                const userData = userDoc.data();
+                
+                // Show matchmaking screen
+                document.getElementById('main-menu-screen').classList.remove('active');
+                document.getElementById('matchmaking-screen').classList.add('active');
+                document.getElementById('matchmaking-rating').textContent = userData.rating;
+                document.getElementById('matchmaking-level').textContent = userData.level;
+                
+                // Start matchmaking timer
+                let seconds = 0;
+                const timerInterval = setInterval(() => {
+                    seconds++;
+                    document.getElementById('matchmaking-time').textContent = formatTime(seconds);
+                }, 1000);
+                
+                // Start matchmaking process
+                const matchResult = await findMatch(userId, userData.rating);
+                
+                // Show opponent info
+                const opponentDoc = await getDoc(doc(db, 'users', matchResult.opponent.userId));
+                const opponentData = opponentDoc.data();
+                
+                document.getElementById('opponent-found').style.display = 'block';
+                document.getElementById('opponent-name').textContent = opponentData.displayName;
+                document.getElementById('opponent-rating').textContent = `Rating: ${opponentData.rating}`;
+                document.getElementById('opponent-stats').textContent = 
+                    `Win Rate: ${Math.round((opponentData.wins / opponentData.gamesPlayed) * 100 || 0)}%`;
+                
+                // Start countdown
+                let countdown = 3;
+                const countdownInterval = setInterval(() => {
+                    document.getElementById('game-countdown').textContent = countdown;
+                    if (countdown <= 0) {
+                        clearInterval(countdownInterval);
+                        startGame(matchResult.gameId);
+                    }
+                    countdown--;
+                }, 1000);
+                
+            } catch (error) {
+                console.error('Matchmaking error:', error);
+                showMatchmakingError(error);
+            }
+        };
+
+        // Handle game end and rating updates
+        async function handleGameEnd(gameId, winnerId) {
+            const gameDoc = await getDoc(doc(db, 'games', gameId));
+            const gameData = gameDoc.data();
+            
+            const player1Doc = await getDoc(doc(db, 'users', gameData.player1));
+            const player2Doc = await getDoc(doc(db, 'users', gameData.player2));
+            
+            const player1Data = player1Doc.data();
+            const player2Data = player2Doc.data();
+            
+            const player1Won = gameData.player1 === winnerId;
+            
+            // Calculate new ratings
+            const { newRating1, newRating2 } = calculateNewRatings(
+                player1Data.rating,
+                player2Data.rating,
+                player1Won
+            );
+            
+            // Update player 1
+            await updateDoc(doc(db, 'users', gameData.player1), {
+                rating: newRating1,
+                gamesPlayed: player1Data.gamesPlayed + 1,
+                wins: player1Data.wins + (player1Won ? 1 : 0),
+                losses: player1Data.losses + (player1Won ? 0 : 1),
+                lastActive: serverTimestamp()
+            });
+            
+            // Update player 2
+            await updateDoc(doc(db, 'users', gameData.player2), {
+                rating: newRating2,
+                gamesPlayed: player2Data.gamesPlayed + 1,
+                wins: player2Data.wins + (player1Won ? 0 : 1),
+                losses: player2Data.losses + (player1Won ? 1 : 0),
+                lastActive: serverTimestamp()
+            });
+            
+            // Award XP
+            const baseXP = 100;
+            const winBonus = 50;
+            const ratingDiffBonus = Math.max(0, Math.floor((Math.abs(player1Data.rating - player2Data.rating) / 100) * 10));
+            
+            await updateUserXP(gameData.player1, baseXP + (player1Won ? winBonus + ratingDiffBonus : 0));
+            await updateUserXP(gameData.player2, baseXP + (!player1Won ? winBonus + ratingDiffBonus : 0));
+            
+            // Update game status
+            await updateDoc(doc(db, 'games', gameId), {
+                status: 'completed',
+                winner: winnerId,
+                player1NewRating: newRating1,
+                player2NewRating: newRating2
+            });
+            
+            return { newRating1, newRating2 };
+        }
+
         window.firebaseServices = {
             RecaptchaVerifier,
             signInWithPhoneNumber,
@@ -733,6 +1004,17 @@
             <div style="font-size: 18px; margin-bottom: 10px;">Welcome back,</div>
             <div id="user-name" style="font-size: 24px; font-weight: bold; color: var(--accent-cyan);">Player</div>
             <div id="user-rating" style="font-size: 16px; color: var(--primary-magenta); margin-top: 5px;">Rating: 1000</div>
+            
+            <!-- Level Progress Bar -->
+            <div style="margin-top: 15px; width: 100%; max-width: 300px; margin-left: auto; margin-right: auto;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span style="font-size: 14px;">Level <span id="user-level">1</span></span>
+                    <span style="font-size: 14px;">XP: <span id="user-xp">0</span>/<span id="user-xp-required">1000</span></span>
+                </div>
+                <div style="background: rgba(10, 14, 39, 0.6); border-radius: 10px; height: 10px; overflow: hidden;">
+                    <div id="xp-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary-purple), var(--primary-magenta)); transition: width 0.3s ease;"></div>
+                </div>
+            </div>
         </div>
 
         <div style="display: flex; flex-direction: column; align-items: center; gap: 15px;">
@@ -752,6 +1034,11 @@
         <div style="text-align: center; margin: 20px;">
             <p>Searching for a player near your skill level...</p>
             <p style="color: var(--accent-cyan); margin-top: 10px;">Your Rating: <span id="matchmaking-rating">1000</span></p>
+            <p style="color: var(--primary-magenta); margin-top: 5px;">Level <span id="matchmaking-level">1</span></p>
+            <p style="font-size: 14px; margin-top: 15px;">Rating Range: ±200</p>
+            <div style="margin-top: 10px; font-size: 14px; opacity: 0.8;">
+                <span id="matchmaking-time">0:00</span> elapsed
+            </div>
         </div>
 
         <div id="opponent-found" style="display: none; text-align: center; margin-top: 30px;">
