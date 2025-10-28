@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Othello - Authentication</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Authentication Screen -->
+    <div id="auth-screen" class="screen active">
+        <h1 class="auth-title">Welcome to Othello</h1>
+        
+        <!-- Google Authentication -->
+        <div class="auth-option">
+            <button onclick="handleGoogleSignIn()" class="google-btn">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGcgZmlsbD0ibm9uZSIgZmlsbC1ydWxlPSJldmVub2RkIj48cGF0aCBkPSJNMTcuNiA5LjJsLS4xLTEuOEg5djMuNGg0LjhDMTMuNiAxMiAxMyAxMyAxMiAxMy42djIuMmgzYTguOCA4LjggMCAwIDAgMi42LTYuNnoiIGZpbGw9IiM0Mjg1RjQiIGZpbGwtcnVsZT0ibm9uemVybyIvPjxwYXRoIGQ9Ik05IDE4YzIuNCAwIDQuNS0uOCA2LTIuMmwtMy0yLjJhNS40IDUuNCAwIDAgMS04LTIuOUgxVjEzYTkgOSAwIDAgMCA4IDV6IiBmaWxsPSIjMzRBODUzIiBmaWxsLXJ1bGU9Im5vbnplcm8iLz48cGF0aCBkPSJNNCAxMC43YTUuNCA1LjQgMCAwIDEgMC0zLjRWNUgxYTkgOSAwIDAgMCAwIDhsMy0yLjN6IiBmaWxsPSIjRkJCQzA1IiBmaWxsLXJ1bGU9Im5vbnplcm8iLz48cGF0aCBkPSJNOSAzLjZjMS4zIDAgMi41LjQgMy40IDEuM0wxNSAyLjNBOSA5IDAgMCAwIDEgNWwzIDIuNGE1LjQgNS40IDAgMCAxIDUtMy43eiIgZmlsbD0iI0VBNDMzNSIgZmlsbC1ydWxlPSJub256ZXJvIi8+PHBhdGggZD0iTTAgMGgxOHYxOEgweiIvPjwvZz48L3N2Zz4=" alt="Google logo">
+                Sign in with Google
+            </button>
+        </div>
+
+        <div class="separator">OR</div>
+
+        <!-- Phone Authentication -->
+        <div class="auth-option phone-auth">
+            <div id="phone-input-section">
+                <div class="input-group">
+                    <select id="country-code" class="country-code">
+                        <option value="+1">+1 (US)</option>
+                        <option value="+44">+44 (UK)</option>
+                        <option value="+91">+91 (IN)</option>
+                    </select>
+                    <input type="tel" id="phone-number" class="phone-input" placeholder="Phone number">
+                </div>
+                <div id="recaptcha-container"></div>
+                <button onclick="handleSendOTP()" id="send-otp-btn" class="auth-btn">
+                    <span id="send-otp-text">Send OTP</span>
+                    <div id="send-otp-loading" class="loading-spinner"></div>
+                </button>
+            </div>
+
+            <div id="otp-input-section" style="display: none;">
+                <input type="text" id="otp-code" class="phone-input" placeholder="Enter OTP">
+                <button onclick="handleVerifyOTP()" id="verify-otp-btn" class="auth-btn">
+                    <span id="verify-otp-text">Verify OTP</span>
+                    <div id="verify-otp-loading" class="loading-spinner"></div>
+                </button>
+            </div>
+        </div>
+
+        <div id="auth-error"></div>
+    </div>
+
+    <!-- Import our modules -->
+    <script type="module">
+        import { signInWithGoogle, sendOTP, verifyOTP, showAuthError, auth } from './js/auth.js';
+
+        // Make functions available globally
+        window.handleGoogleSignIn = async function() {
+            try {
+                await signInWithGoogle();
+                // Redirect to game page after successful authentication
+                window.location.href = 'game.html';
+            } catch (error) {
+                console.error('Google sign-in error:', error);
+                showAuthError('Failed to sign in with Google. Please try again.');
+            }
+        };
+
+        window.handleSendOTP = async function() {
+            const phoneNumber = document.getElementById('country-code').value + 
+                              document.getElementById('phone-number').value;
+            try {
+                const confirmationResult = await sendOTP(phoneNumber, 'recaptcha-container');
+                window.confirmationResult = confirmationResult;
+                document.getElementById('phone-input-section').style.display = 'none';
+                document.getElementById('otp-input-section').style.display = 'block';
+            } catch (error) {
+                showAuthError('Failed to send OTP. Please try again.');
+            }
+        };
+
+        window.handleVerifyOTP = async function() {
+            const otpCode = document.getElementById('otp-code').value;
+            try {
+                await verifyOTP(window.confirmationResult, otpCode);
+                // Redirect to game page after successful authentication
+                window.location.href = 'game.html';
+            } catch (error) {
+                showAuthError('Invalid OTP. Please try again.');
+            }
+        };
+
+        // Check if user is already authenticated
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                window.location.href = 'game.html';
+            }
+        });
+    </script>
+</body>
+</html>

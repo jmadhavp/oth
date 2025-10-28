@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Othello - Game</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Welcome Screen -->
+    <div id="welcome-screen" class="screen active">
+        <h1 class="welcome-title">Welcome to Othello!</h1>
+        <div class="player-profile">
+            <h2 id="player-display-name">Loading...</h2>
+        </div>
+        <p class="welcome-text">
+            Get ready to challenge players from around the world in this classic game of strategy.
+            Match with random opponents and compete to become the ultimate Othello master!
+        </p>
+        <button onclick="startMatchmaking()" class="start-btn">Start Playing</button>
+        <button onclick="handleSignOut()" class="auth-btn">Sign Out</button>
+    </div>
+
+    <!-- Matchmaking Screen -->
+    <div id="matchmaking-screen" class="screen">
+        <h2>Finding Opponent</h2>
+        <div class="matchmaking-status">Searching...</div>
+        <div class="matchmaking-timer" id="matchmaking-time">0:00</div>
+        <div id="opponent-found" style="display: none;">
+            <h3>Opponent Found!</h3>
+            <p id="opponent-name"></p>
+            <p>Game starting in <span id="game-countdown">3</span>...</p>
+        </div>
+        <button onclick="cancelMatchmaking()" class="auth-btn">Cancel</button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+        <div class="player-info">
+            <div class="player-card">
+                <div class="player-name" id="player-name"></div>
+                <div class="player-stats">
+                    <div id="player-pieces">Pieces: 2</div>
+                </div>
+            </div>
+            <div class="player-card">
+                <div class="player-name" id="opponent-name-ingame"></div>
+                <div class="player-stats">
+                    <div id="opponent-pieces">Pieces: 2</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="game-board" id="game-board"></div>
+
+        <div class="game-controls">
+            <button onclick="forfeitGame()" class="auth-btn">Forfeit Game</button>
+        </div>
+    </div>
+
+    <!-- Import our modules -->
+    <script type="module">
+        import { auth, db } from './js/auth.js';
+        import { findMatch, GameState } from './js/game.js';
+
+        let currentGameState = null;
+        let matchmakingTimer = null;
+
+        // Check authentication status
+        auth.onAuthStateChanged((user) => {
+            if (!user) {
+                window.location.href = 'auth.html';
+                return;
+            }
+            // Update welcome screen with user info
+            document.getElementById('player-display-name').textContent = user.displayName || 'Player';
+        });
+
+        window.startMatchmaking = async function() {
+            try {
+                document.getElementById('welcome-screen').classList.remove('active');
+                document.getElementById('matchmaking-screen').classList.add('active');
+                
+                let seconds = 0;
+                matchmakingTimer = setInterval(() => {
+                    seconds++;
+                    document.getElementById('matchmaking-time').textContent = 
+                        `${Math.floor(seconds/60)}:${(seconds%60).toString().padStart(2, '0')}`;
+                }, 1000);
+
+                const matchResult = await findMatch(auth.currentUser.uid);
+                clearInterval(matchmakingTimer);
+
+                // Show opponent found UI
+                document.getElementById('opponent-found').style.display = 'block';
+                document.getElementById('opponent-name').textContent = matchResult.opponent.displayName || 'Anonymous';
+
+                // Start game after countdown
+                let countdown = 3;
+                const countdownInterval = setInterval(() => {
+                    document.getElementById('game-countdown').textContent = countdown;
+                    if (countdown <= 0) {
+                        clearInterval(countdownInterval);
+                        document.getElementById('matchmaking-screen').classList.remove('active');
+                        document.getElementById('game-screen').classList.add('active');
+                        
+                        currentGameState = new GameState(matchResult.gameId, auth.currentUser.uid);
+                        currentGameState.startGame();
+                    }
+                    countdown--;
+                }, 1000);
+
+            } catch (error) {
+                console.error('Matchmaking error:', error);
+                clearInterval(matchmakingTimer);
+                document.getElementById('matchmaking-screen').classList.remove('active');
+                document.getElementById('welcome-screen').classList.add('active');
+            }
+        };
+
+        window.cancelMatchmaking = function() {
+            if (matchmakingTimer) {
+                clearInterval(matchmakingTimer);
+                matchmakingTimer = null;
+            }
+            document.getElementById('matchmaking-screen').classList.remove('active');
+            document.getElementById('welcome-screen').classList.add('active');
+        };
+
+        window.forfeitGame = async function() {
+            if (currentGameState) {
+                await currentGameState.forfeit();
+                currentGameState = null;
+                document.getElementById('game-screen').classList.remove('active');
+                document.getElementById('welcome-screen').classList.add('active');
+            }
+        };
+
+        window.handleSignOut = async function() {
+            try {
+                await auth.signOut();
+                window.location.href = 'auth.html';
+            } catch (error) {
+                console.error('Sign out error:', error);
+            }
+        };
+    </script>
+</body>
+</html>

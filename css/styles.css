@@ -1,0 +1,277 @@
+/* Main Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: #1a1a1a;
+    color: #ffffff;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Screen Styles */
+.screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    background: #2a2a2a;
+    border-radius: 1rem;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    max-width: 90%;
+    width: 400px;
+}
+
+.screen.active {
+    display: flex;
+}
+
+/* Authentication Screen */
+#auth-screen {
+    gap: 1.5rem;
+}
+
+.auth-title {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: #4CAF50;
+}
+
+.auth-option {
+    width: 100%;
+    max-width: 300px;
+}
+
+.google-btn {
+    width: 100%;
+    padding: 0.8rem;
+    background: #ffffff;
+    color: #333;
+    border: none;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: background-color 0.3s;
+}
+
+.google-btn:hover {
+    background: #f1f1f1;
+}
+
+.separator {
+    width: 100%;
+    text-align: center;
+    margin: 1rem 0;
+    position: relative;
+}
+
+.separator::before,
+.separator::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 45%;
+    height: 1px;
+    background: #666;
+}
+
+.separator::before { left: 0; }
+.separator::after { right: 0; }
+
+/* Phone Authentication */
+.phone-auth {
+    width: 100%;
+}
+
+.input-group {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.country-code {
+    width: 30%;
+    padding: 0.8rem;
+    background: #333;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+}
+
+.phone-input {
+    width: 70%;
+    padding: 0.8rem;
+    background: #333;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+}
+
+.auth-btn {
+    width: 100%;
+    padding: 0.8rem;
+    background: #4CAF50;
+    color: #fff;
+    border: none;
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.auth-btn:hover {
+    background: #45a049;
+}
+
+.auth-btn:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    display: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Error Message */
+#auth-error {
+    display: none;
+    color: #ff4444;
+    margin-top: 1rem;
+    text-align: center;
+}
+
+/* Game Screen */
+#game-screen {
+    width: 100%;
+    max-width: 800px;
+}
+
+.game-board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+    background: #333;
+    padding: 10px;
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
+.cell {
+    aspect-ratio: 1;
+    background: #1a1a1a;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+}
+
+.cell:hover {
+    background: #222;
+}
+
+.piece {
+    width: 90%;
+    height: 90%;
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    transition: background-color 0.3s;
+}
+
+.piece.white { background: #fff; }
+.piece.black { background: #000; }
+
+/* Player Info */
+.player-info {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.player-card {
+    background: #333;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    min-width: 200px;
+}
+
+.player-name {
+    font-size: 1.2rem;
+    margin-bottom: 0.5rem;
+}
+
+.player-stats {
+    font-size: 0.9rem;
+    color: #aaa;
+}
+
+/* Matchmaking Screen */
+#matchmaking-screen {
+    text-align: center;
+}
+
+.matchmaking-status {
+    margin: 1rem 0;
+    font-size: 1.2rem;
+}
+
+.matchmaking-timer {
+    font-size: 2rem;
+    margin: 1rem 0;
+    font-family: monospace;
+}
+
+/* Welcome Screen */
+#welcome-screen {
+    text-align: center;
+}
+
+.welcome-title {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: #4CAF50;
+}
+
+.welcome-text {
+    margin-bottom: 2rem;
+    line-height: 1.6;
+}
+
+.start-btn {
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    background: #4CAF50;
+    color: #fff;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.start-btn:hover {
+    background: #45a049;
+}
