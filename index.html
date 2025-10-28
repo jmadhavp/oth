@@ -1231,14 +1231,10 @@
 
         async function findMatch() {
             try {
-                // Query for potential opponents (within rating range)
-                const minRating = Math.max(0, currentUser.rating - 150);
-                const maxRating = currentUser.rating + 150;
-
+                // Query for any waiting opponent
                 const q = window.firebaseServices.query(
                     window.firebaseServices.collection(window.db, 'matchmaking_queue'),
-                    window.firebaseServices.where('rating', '>=', minRating),
-                    window.firebaseServices.where('rating', '<=', maxRating),
+                    window.firebaseServices.where('status', '==', 'waiting'),
                     window.firebaseServices.where('userId', '!=', currentUser.uid),
                     window.firebaseServices.limit(1)
                 );
@@ -1354,27 +1350,39 @@
         }
 
         async function startGame(gameId, gameData) {
-            currentGame = gameData;
-            currentGame.id = gameId;
+            try {
+                currentGame = gameData;
+                currentGame.id = gameId;
 
-            // Set up real-time listener for game updates
-            gameUnsubscribe = window.firebaseServices.onSnapshot(
-                window.firebaseServices.doc(window.db, 'games', gameId),
-                (doc) => {
-                    if (doc.exists()) {
-                        const updatedGame = doc.data();
-                        updateGameState(updatedGame);
+                // Set up real-time listener for game updates
+                gameUnsubscribe = window.firebaseServices.onSnapshot(
+                    window.firebaseServices.doc(window.db, 'games', gameId),
+                    (doc) => {
+                        if (doc.exists()) {
+                            const updatedGame = doc.data();
+                            currentGame = { ...updatedGame, id: gameId };
+                            updateGameState(updatedGame);
+                            updateBoard();
+                            updateGameInfo();
+                        }
                     }
-                }
-            );
+                );
 
-            // Initialize game UI
-            setupGameScreen(gameData);
-            showScreen('game-screen');
-            document.getElementById('floating-menu').style.display = 'flex';
+                // Initialize game UI
+                setupGameScreen(gameData);
+                showScreen('game-screen');
+                document.getElementById('floating-menu').style.display = 'flex';
+                document.getElementById('opponent-found').style.display = 'none';
 
-            // Start timer
-            startGameTimer();
+                // Start timer
+                startGameTimer();
+                
+                console.log('Game started successfully:', gameId);
+            } catch (error) {
+                console.error('Error starting game:', error);
+                showError('Failed to start game. Please try again');
+                goToMainMenu();
+            }
         }
 
         function setupGameScreen(gameData) {
@@ -1604,23 +1612,49 @@
         }
 
         function updateGameState(gameData) {
-            if (!gameData) return;
+            try {
+                if (!gameData) {
+                    console.error('Invalid game data received');
+                    return;
+                }
 
-            currentGame = { ...currentGame, ...gameData };
-            board = gameData.board;
+                // Update game state
+                currentGame = { ...currentGame, ...gameData };
+                board = JSON.parse(JSON.stringify(gameData.board)); // Deep copy to prevent reference issues
 
-            updateBoard();
-            updateGameInfo();
+                // Update UI
+                updateBoard();
+                updateGameInfo();
 
-            // Check if game is finished
-            if (gameData.status === 'completed') {
-                endGame(gameData);
-            }
+                // Handle game status
+                if (gameData.status === 'completed') {
+                    endGame(gameData);
+                    return;
+                }
 
-            // Reset timer if move was made
-            if (gameData.lastMoveAt && Date.now() - gameData.lastMoveAt.seconds * 1000 < 2000) {
-                timeRemaining = gameData.timer || 15;
-                updateTimerDisplay();
+                // Update turn status
+                const myColor = getCurrentPlayerColor();
+                isMyTurn = gameData.currentTurn === myColor;
+
+                // Reset timer if a new move was made
+                const moveTime = gameData.lastMoveAt?.seconds ? gameData.lastMoveAt.seconds * 1000 : 0;
+                if (moveTime && Date.now() - moveTime < 2000) {
+                    timeRemaining = gameData.timer || 15;
+                    updateTimerDisplay();
+                    if (isMyTurn) {
+                        startGameTimer(); // Restart timer for new turn
+                    }
+                }
+
+                console.log('Game state updated:', {
+                    currentTurn: gameData.currentTurn,
+                    isMyTurn,
+                    timeRemaining,
+                    status: gameData.status
+                });
+            } catch (error) {
+                console.error('Error updating game state:', error);
+                showError('Error updating game state. Please refresh the page.');
             }
         }
 
