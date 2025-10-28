@@ -141,7 +141,7 @@
             document.getElementById('auth-screen').classList.remove('active');
             document.getElementById('welcome-screen').classList.add('active');
         }
-        import { getFirestore, collection, addDoc, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -182,7 +182,8 @@
             where,
             orderBy,
             limit,
-            serverTimestamp
+            serverTimestamp,
+            getDocs
         };
 
         // Initialize the game when Firebase is ready
@@ -1203,7 +1204,9 @@
             if (!currentUser) return;
 
             showScreen('matchmaking-screen');
-            document.getElementById('matchmaking-rating').textContent = currentUser.rating;
+            const ratingDiffThreshold = 300;
+            document.getElementById('matchmaking-rating').textContent = 
+                `${currentUser.rating} (Searching: ${currentUser.rating - ratingDiffThreshold} - ${currentUser.rating + ratingDiffThreshold})`;
             document.getElementById('floating-menu').style.display = 'none';
 
             try {
@@ -1241,22 +1244,35 @@
 
         async function findMatch() {
             try {
-                // Query for any waiting opponent, regardless of rating
+                // Query for waiting opponents
                 const q = window.firebaseServices.query(
                     window.firebaseServices.collection(window.db, 'matchmaking_queue'),
                     window.firebaseServices.where('status', '==', 'waiting'),
                     window.firebaseServices.where('userId', '!=', currentUser.uid),
-                    window.firebaseServices.orderBy('joinedAt'),
-                    window.firebaseServices.limit(1)
+                    window.firebaseServices.orderBy('joinedAt')
                 );
+
+                const ratingDiffThreshold = 300; // Allow matching within ±300 rating points
 
                 const querySnapshot = await window.firebaseServices.getDocs(q);
                 console.log('Searching for opponent...');
 
                 if (!querySnapshot.empty) {
-                    // Found a match!
-                    const opponentDoc = querySnapshot.docs[0];
-                    const opponent = opponentDoc.data();
+                    // Find the first opponent within rating threshold
+                    let matchedOpponent = null;
+                    for (const doc of querySnapshot.docs) {
+                        const opponent = doc.data();
+                        const ratingDiff = Math.abs(currentUser.rating - opponent.rating);
+                        
+                        if (ratingDiff <= ratingDiffThreshold) {
+                            matchedOpponent = { ...opponent, id: doc.id };
+                            break;
+                        }
+                    }
+
+                    if (matchedOpponent) {
+                        // Found a suitable match!
+                        const opponent = matchedOpponent;
 
                     console.log('Found opponent:', {
                         opponentId: opponent.userId,
@@ -1272,9 +1288,18 @@
 
                     // Create game
                     await createGame(opponent);
+                    } else {
+                        console.log('No suitable opponent found within rating range, retrying...');
+                        // No suitable match found, wait and try again
+                        setTimeout(() => {
+                            if (document.getElementById('matchmaking-screen').classList.contains('active')) {
+                                findMatch();
+                            }
+                        }, 2000);
+                    }
                 } else {
-                    console.log('No opponent found, retrying...');
-                    // No match found, wait and try again
+                    console.log('No opponents in queue, retrying...');
+                    // No opponents at all, wait and try again
                     setTimeout(() => {
                         if (document.getElementById('matchmaking-screen').classList.contains('active')) {
                             findMatch();
