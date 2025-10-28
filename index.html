@@ -1207,6 +1207,9 @@
             document.getElementById('floating-menu').style.display = 'none';
 
             try {
+                // Generate a unique match ID
+                const matchId = Math.random().toString(36).substring(2, 15);
+
                 // Add user to matchmaking queue
                 await window.firebaseServices.setDoc(
                     window.firebaseServices.doc(window.db, 'matchmaking_queue', currentUser.uid),
@@ -1215,9 +1218,16 @@
                         displayName: currentUser.displayName,
                         rating: currentUser.rating,
                         joinedAt: window.firebaseServices.serverTimestamp(),
-                        status: 'waiting'
+                        status: 'waiting',
+                        matchId: matchId
                     }
                 );
+
+                console.log('Added to matchmaking queue:', {
+                    userId: currentUser.uid,
+                    rating: currentUser.rating,
+                    matchId: matchId
+                });
 
                 // Look for matches
                 findMatch();
@@ -1231,24 +1241,39 @@
 
         async function findMatch() {
             try {
-                // Query for any waiting opponent
+                // Query for any waiting opponent, regardless of rating
                 const q = window.firebaseServices.query(
                     window.firebaseServices.collection(window.db, 'matchmaking_queue'),
                     window.firebaseServices.where('status', '==', 'waiting'),
                     window.firebaseServices.where('userId', '!=', currentUser.uid),
+                    window.firebaseServices.orderBy('joinedAt'),
                     window.firebaseServices.limit(1)
                 );
 
                 const querySnapshot = await window.firebaseServices.getDocs(q);
+                console.log('Searching for opponent...');
 
                 if (!querySnapshot.empty) {
                     // Found a match!
                     const opponentDoc = querySnapshot.docs[0];
                     const opponent = opponentDoc.data();
 
+                    console.log('Found opponent:', {
+                        opponentId: opponent.userId,
+                        opponentRating: opponent.rating,
+                        ratingDiff: Math.abs(currentUser.rating - opponent.rating)
+                    });
+
+                    // Update opponent's status to 'matched'
+                    await window.firebaseServices.updateDoc(
+                        window.firebaseServices.doc(window.db, 'matchmaking_queue', opponent.userId),
+                        { status: 'matched' }
+                    );
+
                     // Create game
                     await createGame(opponent);
                 } else {
+                    console.log('No opponent found, retrying...');
                     // No match found, wait and try again
                     setTimeout(() => {
                         if (document.getElementById('matchmaking-screen').classList.contains('active')) {
@@ -1269,9 +1294,24 @@
 
         async function createGame(opponent) {
             try {
-                // Remove both users from matchmaking queue
-                await window.firebaseServices.deleteDoc(window.firebaseServices.doc(window.db, 'matchmaking_queue', currentUser.uid));
-                await window.firebaseServices.deleteDoc(window.firebaseServices.doc(window.db, 'matchmaking_queue', opponent.userId));
+                console.log('Creating game session with opponent:', opponent.displayName);
+
+                // Update current user's status to matched
+                await window.firebaseServices.updateDoc(
+                    window.firebaseServices.doc(window.db, 'matchmaking_queue', currentUser.uid),
+                    { status: 'matched' }
+                );
+
+                // Clean up matchmaking queue after a short delay to ensure both players are ready
+                setTimeout(async () => {
+                    try {
+                        await window.firebaseServices.deleteDoc(window.firebaseServices.doc(window.db, 'matchmaking_queue', currentUser.uid));
+                        await window.firebaseServices.deleteDoc(window.firebaseServices.doc(window.db, 'matchmaking_queue', opponent.userId));
+                        console.log('Cleaned up matchmaking queue entries');
+                    } catch (error) {
+                        console.error('Error cleaning up matchmaking queue:', error);
+                    }
+                }, 1000);
 
                 // Determine who plays as black (always starts first)
                 const playerIsBlack = Math.random() < 0.5;
