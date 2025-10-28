@@ -9,7 +9,105 @@
     <script type="module">
         // Import the functions you need from the SDKs you need
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        const googleProvider = new GoogleAuthProvider();
+        
+        // Make signInWithGoogle function globally available
+        window.signInWithGoogle = async function() {
+            try {
+                const result = await signInWithPopup(auth, googleProvider);
+                // Handle successful sign-in
+                const user = result.user;
+                console.log('Google sign-in successful:', user);
+                showWelcomeScreen();
+            } catch (error) {
+                console.error('Google sign-in error:', error);
+                showAuthError('Google sign-in failed. Please try again.');
+            }
+        };
+
+        // Improved phone authentication
+        window.sendOTP = async function() {
+            const phoneNumber = document.getElementById('country-code').value + document.getElementById('phone-number').value;
+            const sendOtpBtn = document.getElementById('send-otp-btn');
+            const sendOtpText = document.getElementById('send-otp-text');
+            const sendOtpLoading = document.getElementById('send-otp-loading');
+            
+            try {
+                sendOtpBtn.disabled = true;
+                sendOtpText.style.display = 'none';
+                sendOtpLoading.style.display = 'inline-block';
+                
+                // Initialize reCAPTCHA verifier if not already initialized
+                if (!window.recaptchaVerifier) {
+                    window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+                        'size': 'normal',
+                        'callback': (response) => {
+                            // reCAPTCHA solved, allow signInWithPhoneNumber.
+                        },
+                        'expired-callback': () => {
+                            // Reset reCAPTCHA
+                            window.recaptchaVerifier.reset();
+                        }
+                    });
+                }
+
+                // Send OTP
+                const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, window.recaptchaVerifier);
+                window.confirmationResult = confirmationResult;
+                
+                // Show OTP input section
+                document.getElementById('phone-input-section').style.display = 'none';
+                document.getElementById('otp-input-section').style.display = 'block';
+                document.getElementById('auth-error').style.display = 'none';
+            } catch (error) {
+                console.error('Error sending OTP:', error);
+                showAuthError('Failed to send OTP. Please try again.');
+                // Reset reCAPTCHA on error
+                if (window.recaptchaVerifier) {
+                    window.recaptchaVerifier.reset();
+                }
+            } finally {
+                sendOtpBtn.disabled = false;
+                sendOtpText.style.display = 'inline-block';
+                sendOtpLoading.style.display = 'none';
+            }
+        };
+
+        window.verifyOTP = async function() {
+            const otpCode = document.getElementById('otp-code').value;
+            const verifyOtpBtn = document.getElementById('verify-otp-btn');
+            const verifyOtpText = document.getElementById('verify-otp-text');
+            const verifyOtpLoading = document.getElementById('verify-otp-loading');
+            
+            try {
+                verifyOtpBtn.disabled = true;
+                verifyOtpText.style.display = 'none';
+                verifyOtpLoading.style.display = 'inline-block';
+                
+                const result = await window.confirmationResult.confirm(otpCode);
+                console.log('Phone authentication successful:', result.user);
+                showWelcomeScreen();
+            } catch (error) {
+                console.error('Error verifying OTP:', error);
+                showAuthError('Invalid OTP. Please try again.');
+            } finally {
+                verifyOtpBtn.disabled = false;
+                verifyOtpText.style.display = 'inline-block';
+                verifyOtpLoading.style.display = 'none';
+            }
+        };
+
+        function showAuthError(message) {
+            const errorDiv = document.getElementById('auth-error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function showWelcomeScreen() {
+            document.getElementById('auth-screen').classList.remove('active');
+            document.getElementById('welcome-screen').classList.add('active');
+        }
         import { getFirestore, collection, addDoc, doc, setDoc, getDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Your web app's Firebase configuration
@@ -36,6 +134,9 @@
             signInWithPhoneNumber,
             onAuthStateChanged,
             signOut,
+            GoogleAuthProvider,
+            signInWithPopup,
+            googleProvider,
             collection,
             addDoc,
             doc,
@@ -514,6 +615,20 @@
         <h2 style="margin-bottom: 40px; color: var(--accent-cyan);">Hypnotic Multiplayer</h2>
 
         <div style="text-align: center; max-width: 400px;">
+            <h3 style="margin-bottom: 20px;">Sign In</h3>
+            
+            <button class="btn" onclick="signInWithGoogle()" style="background: #4285f4; margin-bottom: 20px; width: 100%;">
+                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgdmlld0JveD0iMCAwIDQ4IDQ4Ij48cGF0aCBmaWxsPSIjRkZGRkZGIiBkPSJNNDMuNjExLDIwLjA4M0g0MlYyMEgyNHY4aDExLjMwM2MtMS42NDksNC42NTctNi4wOCw4LTExLjMwMyw4Yy02LjYyNywwLTEyLTUuMzczLTEyLTEyYzAtNi42MjcsNS4zNzMtMTIsMTItMTJjMy4wNTksMCw1Ljg0MiwxLjE1NCw3Ljk2MSwzLjAzOWw1LjY1Ny01LjY1N0MzNC4wNDYsNi4wNTMsMjkuMjY4LDQsMjQsNEMxMi45NTUsNCw0LDEyLjk1NSw0LDI0YzAsMTEuMDQ1LDguOTU1LDIwLDIwLDIwYzExLjA0NSwwLDIwLTguOTU1LDIwLTIwQzQ0LDIyLjY1OSw0My44NjIsMjEuMzUsNDMuNjExLDIwLjA4M3oiPjwvcGF0aD48L3N2Zz4=" alt="Google logo" style="width: 18px; height: 18px; margin-right: 10px; vertical-align: middle;">Sign in with Google
+            </button>
+
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <div style="flex-grow: 1; height: 1px; background: var(--text-light); opacity: 0.3;"></div>
+                    <span style="margin: 0 10px; color: var(--text-light); opacity: 0.7;">OR</span>
+                    <div style="flex-grow: 1; height: 1px; background: var(--text-light); opacity: 0.3;"></div>
+                </div>
+            </div>
+
             <h3 style="margin-bottom: 20px;">Phone Authentication</h3>
 
             <div id="phone-input-section">
