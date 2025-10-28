@@ -183,53 +183,58 @@
             return { newXP, newLevel };
         }
 
+        // Generate unique game ID
+        function generateGameId() {
+            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
+
         // Matchmaking function
-        async function findMatch(userId, userRating) {
-            const usersRef = collection(db, 'matchmaking');
+        async function findMatch(userId) {
+            const matchmakingRef = collection(db, 'matchmaking');
             const userDoc = await getDoc(doc(db, 'users', userId));
             const userData = userDoc.data();
             
+            // Generate unique matchmaking ID
+            const matchId = generateGameId();
+            
             // Add user to matchmaking pool
-            await setDoc(doc(usersRef, userId), {
+            await setDoc(doc(matchmakingRef, userId), {
                 userId,
-                rating: userData.rating,
+                matchId,
                 timestamp: serverTimestamp(),
-                level: userData.level
+                status: 'waiting'
             });
             
-            // Look for opponents within rating range
-            const RATING_RANGE = 200; // Adjust this value to change matchmaking strictness
+            // Query for any available player
             const matchQuery = query(
-                usersRef,
+                matchmakingRef,
                 where('userId', '!=', userId),
-                where('rating', '>=', userData.rating - RATING_RANGE),
-                where('rating', '<=', userData.rating + RATING_RANGE)
+                where('status', '==', 'waiting')
             );
             
             // Listen for potential matches
             return new Promise((resolve, reject) => {
                 const unsubscribe = onSnapshot(matchQuery, async (snapshot) => {
-                    const matches = snapshot.docs
-                        .map(doc => doc.data())
-                        .filter(player => Math.abs(player.rating - userData.rating) <= RATING_RANGE)
-                        .sort((a, b) => Math.abs(a.rating - userData.rating) - Math.abs(b.rating - userData.rating));
+                    const availablePlayers = snapshot.docs.map(doc => doc.data());
                     
-                    if (matches.length > 0) {
-                        const match = matches[0];
+                    if (availablePlayers.length > 0) {
+                        // Pick a random opponent
+                        const randomIndex = Math.floor(Math.random() * availablePlayers.length);
+                        const match = availablePlayers[randomIndex];
+                        
                         // Create game session
-                        const gameId = crypto.randomUUID();
+                        const gameId = generateGameId();
                         await setDoc(doc(db, 'games', gameId), {
                             player1: userId,
                             player2: match.userId,
-                            player1Rating: userData.rating,
-                            player2Rating: match.rating,
                             status: 'starting',
-                            timestamp: serverTimestamp()
+                            timestamp: serverTimestamp(),
+                            matchId: gameId
                         });
                         
                         // Remove both players from matchmaking
-                        await deleteDoc(doc(usersRef, userId));
-                        await deleteDoc(doc(usersRef, match.userId));
+                        await deleteDoc(doc(matchmakingRef, userId));
+                        await deleteDoc(doc(matchmakingRef, match.userId));
                         
                         unsubscribe();
                         resolve({ gameId, opponent: match });
@@ -239,10 +244,11 @@
                 // Timeout after 60 seconds
                 setTimeout(() => {
                     unsubscribe();
-                    deleteDoc(doc(usersRef, userId));
+                    deleteDoc(doc(matchmakingRef, userId));
                     reject('Matchmaking timeout');
                 }, 60000);
             });
+        }
         }
 
         // Make Firebase services globally available
@@ -297,14 +303,10 @@
         window.startMatchmaking = async function() {
             try {
                 const userId = auth.currentUser.uid;
-                const userDoc = await getDoc(doc(db, 'users', userId));
-                const userData = userDoc.data();
                 
                 // Show matchmaking screen
                 document.getElementById('main-menu-screen').classList.remove('active');
                 document.getElementById('matchmaking-screen').classList.add('active');
-                document.getElementById('matchmaking-rating').textContent = userData.rating;
-                document.getElementById('matchmaking-level').textContent = userData.level;
                 
                 // Start matchmaking timer
                 let seconds = 0;
@@ -314,17 +316,14 @@
                 }, 1000);
                 
                 // Start matchmaking process
-                const matchResult = await findMatch(userId, userData.rating);
+                const matchResult = await findMatch(userId);
                 
                 // Show opponent info
                 const opponentDoc = await getDoc(doc(db, 'users', matchResult.opponent.userId));
                 const opponentData = opponentDoc.data();
                 
                 document.getElementById('opponent-found').style.display = 'block';
-                document.getElementById('opponent-name').textContent = opponentData.displayName;
-                document.getElementById('opponent-rating').textContent = `Rating: ${opponentData.rating}`;
-                document.getElementById('opponent-stats').textContent = 
-                    `Win Rate: ${Math.round((opponentData.wins / opponentData.gamesPlayed) * 100 || 0)}%`;
+                document.getElementById('opponent-name').textContent = opponentData.displayName || 'Anonymous';
                 
                 // Start countdown
                 let countdown = 3;
@@ -336,6 +335,9 @@
                     }
                     countdown--;
                 }, 1000);
+                
+                // Clear matchmaking timer
+                clearInterval(timerInterval);
                 
             } catch (error) {
                 console.error('Matchmaking error:', error);
