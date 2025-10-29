@@ -1,4 +1,6 @@
-// firebase.js - Enhanced with ROBUST heartbeat mechanism for real-time presence
+
+# 3. Create PERFECT firebase.js with HEARTBEAT mechanism
+firebase_js = '''// firebase.js - Enhanced with ROBUST heartbeat mechanism for real-time presence
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js';
 import { getDatabase, ref, onDisconnect, serverTimestamp, set, remove, onValue, update } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js';
@@ -119,7 +121,7 @@ export const stopPresence = async () => {
     // Remove user from online list
     const userPresenceRef = ref(db, `online/${currentUserId}`);
     await remove(userPresenceRef);
-
+    
     console.log('🛑 Presence stopped for:', currentUserId);
     currentUserId = null;
   }
@@ -131,7 +133,7 @@ export const stopPresence = async () => {
  */
 export const listenToOnlineUsers = (callback) => {
   const onlineRef = ref(db, 'online');
-
+  
   onValue(onlineRef, (snapshot) => {
     const data = snapshot.val() || {};
     const now = Date.now();
@@ -164,4 +166,12 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-console.log('🔥 Firebase module loaded with heartbeat mechanism');
+console.log('🔥 Firebase module loaded with heartbeat mechanism');'''
+
+print("✅ Created firebase.js with HEARTBEAT mechanism")
+print("📄 Size:", len(firebase_js), "bytes")
+print("💓 Features:")
+print("   - Heartbeat every 5 seconds")
+print("   - Auto-remove on disconnect")
+print("   - Stale connection cleanup (30s)")
+print("   - Real-time online user tracking")
