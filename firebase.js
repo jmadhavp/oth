@@ -1,4 +1,4 @@
-// firebase.js - Enhanced with ROBUST heartbeat mechanism for real-time presence
+// firebase.js - FIXED with proper name-based presence
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js';
 import { getDatabase, ref, onDisconnect, serverTimestamp, set, remove, onValue, update } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js';
@@ -23,10 +23,10 @@ export const auth = getAuth(app);
 // Global heartbeat interval
 let heartbeatInterval = null;
 let currentUserId = null;
+let currentDisplayName = null;
 
 /**
  * Initialize anonymous authentication
- * @returns {Promise<User>} Firebase user object
  */
 export const initAuth = async () => {
   try {
@@ -40,32 +40,33 @@ export const initAuth = async () => {
 };
 
 /**
- * ROBUST HEARTBEAT MECHANISM
- * Updates user presence every 5 seconds
- * Marks user offline on disconnect
- * Shows real-time online player list
+ * Setup or update presence with display name
+ * Call this EVERY TIME the display name changes
  */
 export const setupPresence = (userId, displayName) => {
   return new Promise((resolve) => {
     currentUserId = userId;
+    currentDisplayName = displayName;
     const userPresenceRef = ref(db, `online/${userId}`);
     const connectedRef = ref(db, '.info/connected');
+
+    console.log('🔄 Setting up presence for:', displayName);
 
     // Listen to Firebase connection state
     onValue(connectedRef, (snapshot) => {
       if (snapshot.val() === true) {
         console.log('🔗 Connected to Firebase');
 
-        // Set up disconnect handler - automatically removes user when they disconnect
+        // Set up disconnect handler
         onDisconnect(userPresenceRef).remove();
 
         // Set user as online with metadata
         const presenceData = {
           online: true,
-          displayName: displayName || `Guest_${userId.slice(-4)}`,
+          displayName: displayName,
           lastSeen: serverTimestamp(),
           connectedAt: serverTimestamp(),
-          userAgent: navigator.userAgent.substring(0, 100) // Browser info
+          userAgent: navigator.userAgent.substring(0, 100)
         };
 
         set(userPresenceRef, presenceData)
@@ -83,64 +84,80 @@ export const setupPresence = (userId, displayName) => {
 };
 
 /**
- * Start heartbeat - updates lastSeen every 5 seconds
- * This ensures real-time tracking of active players
+ * Update display name without reconnecting
+ */
+export const updatePresenceName = async (userId, newDisplayName) => {
+  currentDisplayName = newDisplayName;
+  const userPresenceRef = ref(db, `online/${userId}`);
+  
+  try {
+    await update(userPresenceRef, {
+      displayName: newDisplayName,
+      lastSeen: serverTimestamp()
+    });
+    console.log('✅ Display name updated to:', newDisplayName);
+  } catch (error) {
+    console.error('❌ Name update error:', error);
+  }
+};
+
+/**
+ * Start heartbeat - updates every 5 seconds
  */
 function startHeartbeat(userId, displayName) {
-  // Clear existing interval if any
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
   }
 
   const userPresenceRef = ref(db, `online/${userId}`);
 
-  // Send heartbeat every 5 seconds
   heartbeatInterval = setInterval(() => {
     update(userPresenceRef, {
       lastSeen: serverTimestamp(),
-      online: true
+      online: true,
+      displayName: currentDisplayName || displayName
     }).catch(err => console.error('❌ Heartbeat error:', err));
-  }, 5000); // Update every 5 seconds
+  }, 5000);
 
-  console.log('💓 Heartbeat started - updating every 5s');
+  console.log('💓 Heartbeat started for:', displayName);
 }
 
 /**
- * Stop heartbeat when user manually logs out
+ * Stop presence
  */
 export const stopPresence = async () => {
   if (currentUserId) {
-    // Clear heartbeat interval
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval);
       heartbeatInterval = null;
     }
 
-    // Remove user from online list
     const userPresenceRef = ref(db, `online/${currentUserId}`);
     await remove(userPresenceRef);
-
-    console.log('🛑 Presence stopped for:', currentUserId);
+    
+    console.log('🛑 Presence stopped');
     currentUserId = null;
   }
 };
 
 /**
- * Listen to all online users in real-time
- * Automatically filters out stale connections (inactive > 30s)
+ * Listen to all online users
  */
 export const listenToOnlineUsers = (callback) => {
   const onlineRef = ref(db, 'online');
-
+  
   onValue(onlineRef, (snapshot) => {
     const data = snapshot.val() || {};
     const now = Date.now();
     const STALE_THRESHOLD = 30000; // 30 seconds
 
-    // Filter out stale users (haven't sent heartbeat in 30s)
     const activeUsers = {};
     Object.entries(data).forEach(([uid, userData]) => {
-      if (userData.lastSeen && (now - userData.lastSeen < STALE_THRESHOLD || userData.lastSeen > now - STALE_THRESHOLD)) {
+      // Check if lastSeen is recent
+      const lastSeen = userData.lastSeen || 0;
+      const timeDiff = now - lastSeen;
+      
+      if (timeDiff < STALE_THRESHOLD || lastSeen > now - STALE_THRESHOLD) {
         activeUsers[uid] = userData;
       } else {
         // Remove stale user
@@ -148,7 +165,7 @@ export const listenToOnlineUsers = (callback) => {
       }
     });
 
-    console.log('👥 Active online users:', Object.keys(activeUsers).length);
+    console.log('👥 Active users:', Object.keys(activeUsers).length, Object.values(activeUsers).map(u => u.displayName));
     callback(activeUsers);
   });
 };
@@ -158,10 +175,9 @@ export const listenToOnlineUsers = (callback) => {
  */
 window.addEventListener('beforeunload', () => {
   if (currentUserId) {
-    // This will trigger the onDisconnect handler
     const userPresenceRef = ref(db, `online/${currentUserId}`);
-    remove(userPresenceRef).catch(() => {});
+    navigator.sendBeacon && remove(userPresenceRef).catch(() => {});
   }
 });
 
-console.log('🔥 Firebase module loaded with heartbeat mechanism');
+console.log('🔥 Firebase module loaded with heartbeat');
